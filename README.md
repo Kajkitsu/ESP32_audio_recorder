@@ -11,93 +11,105 @@ Stan: jest tylko dokumentacja sprzętu, firmware jeszcze nie powstał.
 | Element | Model |
 | --- | --- |
 | Płytka | Waveshare ESP32-S3-Touch-LCD-2 (LCD 240×320, slot microSD) |
-| ADC | moduł PCM1808 z gniazdem USB Type-C (5 V) i wejściem AUX 3,5 mm |
-| Źródło | wyjście słuchawkowe miksera, kabel jack stereo |
+| ADC | czarny moduł „PCM1808 IIS” z gniazdem USB Type-C, jackiem 3,5 mm i generatorem kwarcowym |
+| Źródło | wyjście słuchawkowe miksera, kabel jack stereo (TRS) |
+
+Jeden moduł nagrywa oba kanały, drugi nie jest potrzebny.
+
+## Najpierw: tryb pracy modułu
+
+Moduł ma własny generator, więc najpewniej pracuje jako master i sam wytwarza
+zegary. To wariant o najlepszej jakości, bo zegar kwarcowy ma mniejszy jitter
+niż zegar z ESP32-S3. Opisu ze sklepu nie udało się odczytać, dlatego sprawdź
+tryb multimetrem:
+
+1. Zasil sam moduł przez USB Type-C, bez połączeń z ESP.
+2. Zmierz napięcie stałe między GND a pinami LRCK, BCK i MCK.
+3. Około 1,6 V na LRCK i BCK oznacza tryb master (wariant A).
+4. Około 0 V na LRCK i BCK oznacza tryb slave (wariant B).
+
+Przy okazji zmierz VDD33. Około 3,3 V potwierdza, że moduł ma własny
+stabilizator.
 
 ## Połączenia
 
-| PCM1808 | ESP32-S3 | Uwagi |
+Wszystkie użyte piny są na złączu P1 płytki Waveshare i są wolne, dopóki nie
+jest podłączona kamera.
+
+| PCM1808 | Wariant A: moduł master | Wariant B: moduł slave |
 | --- | --- | --- |
-| 5V | 5V | albo osobny kabel do gniazda Type-C modułu, wtedy łączysz tylko GND |
-| GND | GND | masa musi być wspólna |
-| 3.3V | nie podłączać | wyjątek w sekcji „Zasilanie” |
-| SCK | GPIO 18 | zegar systemowy (MCLK), bez niego ADC milczy |
-| BCK | GPIO 16 | zegar bitowy |
-| LRC | GPIO 17 | zegar kanałów (WS) |
-| OUT | GPIO 21 | dane, poziom 3,3 V |
+| GND | GND | GND |
+| VDD33 | nie podłączać | nie podłączać |
+| LRCK | GPIO 2 (wejście) | GPIO 2 (wyjście) |
+| BCK | GPIO 4 (wejście) | GPIO 4 (wyjście) |
+| DATA | GPIO 6 (wejście) | GPIO 6 (wejście) |
+| MCK | nie podłączać | GPIO 18 (wyjście) |
 
-Numery GPIO to propozycja, nie zostały sprawdzone z dokumentacją płytki.
-ESP32-S3 pozwala wyprowadzić I2S na dowolny wolny pin, więc wybierz cztery
-dostępne na złączu i wpisz je w konfiguracji. GPIO 16, 17 i 21 są współdzielone
-ze złączem kamery, czyli wolne, dopóki kamera nie jest podłączona.
+Zasilanie modułu: 5 V przez jego gniazdo USB Type-C. Na złączu z sygnałami nie
+ma pinu 5 V. Zasil moduł i płytkę ESP z tego samego źródła (jeden powerbank lub
+ładowarka), a masy połącz przewodem GND.
 
-Piny zajęte przez płytkę:
+Pin VDD33 podłącz do 3V3 płytki ESP tylko wtedy, gdy pomiar pokazał na nim 0 V.
+
+Przewody I2S powinny mieć najwyżej kilka centymetrów.
+
+## Konfiguracja I2S
+
+| Parametr | Wariant A | Wariant B |
+| --- | --- | --- |
+| Rola ESP | slave, odbiór | master, odbiór |
+| Format | I2S Philips, stereo | I2S Philips, stereo |
+| Dane | 24 bity w slocie 32-bitowym | 24 bity w slocie 32-bitowym |
+| Próbkowanie | ustala moduł, do zmierzenia na LRCK | 48 kHz |
+| MCLK | nieużywany | 256 × fs = 12,288 MHz |
+
+PCM1808 pracuje z ramką 64 BCK, dlatego slot 16-bitowy nie zadziała.
+
+Żadnych zworek nie trzeba dodawać.
+
+## Piny płytki Waveshare
+
+Ze schematu producenta. Złącza P1 i P2 wyprowadzają 22 GPIO.
 
 | Funkcja | GPIO |
 | --- | --- |
 | LCD i microSD (wspólne SPI) | 38, 39, 40, 41, 42, 45 |
-| Dotyk i IMU (I2C) | 46, 47, 48 |
-| Podświetlenie, pomiar baterii | 1, 5 |
-| USB, UART | 19, 20, 43, 44 |
-| Piny startowe | 0, 3 |
+| Reset LCD i przycisk BOOT | 0 |
+| Podświetlenie LCD | 1 |
+| Dotyk i IMU (I2C) | 47, 48, przerwania 46 i 3 |
+| Pomiar baterii | 5 |
+| USB | 19, 20 |
+| UART | 43, 44 |
+| Złącze kamery | 2, 4, 6–17, 21 |
+| Wolny | 18 |
 
-Z tej listy potwierdzone ze schematem są 41, 45, 46, 47 i 48, reszta wymaga
-sprawdzenia.
-
-Przewody I2S powinny mieć najwyżej kilka centymetrów; SCK niesie 12 MHz.
-
-## Zasilanie
-
-PCM1808 potrzebuje 5 V dla części analogowej i 3,3 V dla cyfrowej. Moduł
-zasilany z 5 V powinien mieć własny stabilizator 3,3 V. Sprawdź to raz:
-
-1. Podaj na moduł samo 5 V.
-2. Zmierz napięcie między pinem 3.3V a GND.
-3. Około 3,3 V oznacza, że stabilizator jest na płytce i pin 3.3V zostaje
-   wolny. Nie łącz go z 3V3 płytki ESP.
-4. Około 0 V oznacza, że stabilizatora nie ma. Podłącz wtedy pin 3.3V do 3V3
-   płytki ESP.
+Pin 5V złącza to bezpośrednio napięcie z USB. Przy zasilaniu z akumulatora
+jest na nim 0 V.
 
 ## Filtr LC
 
 Nie jest wymagany. PCM1808 ma wbudowany filtr antyaliasingowy i górnoprzepustowy,
-a kondensatory sprzęgające są na module.
+a moduł ma własny stabilizator i kondensatory.
 
-Filtr na linii 5 V ma sens dopiero wtedy, gdy w nagraniu ciszy słychać zakłócenia
-(pisk, terkot przy transmisji WiFi): koralik ferrytowy lub dławik 10–47 µH
-szeregowo, a za nim kondensator 100–470 µF do masy, tuż przy module.
+Filtr na linii 5 V ma sens dopiero wtedy, gdy w nagraniu ciszy słychać pisk lub
+terkot: koralik ferrytowy albo dławik 10–47 µH szeregowo, a za nim kondensator
+100–470 µF do masy.
 
 Brum 50 Hz to pętla masy, nie zasilanie. Pomaga separator audio
-z transformatorami albo zasilanie rejestratora z baterii.
+z transformatorami albo zasilanie rejestratora z powerbanku.
 
 ## Poziom sygnału
 
 Wejście PCM1808 przesterowuje się przy 3 Vpp (około 1 Vrms). Wyjście słuchawkowe
 miksera potrafi dać kilka razy więcej, więc:
 
-- ustaw głośność słuchawek tak, żeby szczyty były poniżej przesterowania,
+- ustaw głośność słuchawek tak, żeby szczyty były tuż poniżej przesterowania,
 - jeśli zakres regulacji jest niewygodny, dodaj na każdy kanał dzielnik
   10 kΩ / 10 kΩ, który obniża poziom o 6 dB.
 
-## Konfiguracja I2S
-
-| Parametr | Wartość |
-| --- | --- |
-| Rola ESP | master, odbiór (RX) |
-| Format | I2S Philips, stereo |
-| Próbkowanie | 48 kHz |
-| Dane | 24 bity w slocie 32-bitowym |
-| MCLK | 256 × fs = 12,288 MHz |
-
-PCM1808 nie przyjmuje ramek 32 BCK, dlatego slot 16-bitowy nie zadziała.
-
-Zworki modułu: żadnych nie trzeba dodawać. Piny FMT, MD0 i MD1 mają w układzie
-wewnętrzne rezystory do masy, więc niepodłączone dają format I2S i tryb slave.
-Sprawdź tylko, czy żadne z tych pól nie jest fabrycznie zlutowane do 3,3 V.
-
 ## Do zrobienia
 
-- [ ] potwierdzić piny złącza płytki i wpisać ostateczne GPIO
-- [ ] sprawdzić pin 3.3V modułu multimetrem
+- [ ] zmierzyć multimetrem tryb modułu (LRCK, BCK) i pin VDD33
+- [ ] odczytać napis na generatorze i opisy drugiego, 4-pinowego złącza modułu
 - [ ] firmware: odbiór I2S i zapis WAV na microSD
 - [ ] wskaźnik poziomu i przesterowania na LCD
