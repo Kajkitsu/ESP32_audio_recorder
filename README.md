@@ -11,61 +11,63 @@ Stan: jest tylko dokumentacja sprzętu, firmware jeszcze nie powstał.
 | Element | Model |
 | --- | --- |
 | Płytka | Waveshare ESP32-S3-Touch-LCD-2 (LCD 240×320, slot microSD) |
-| ADC | czarny moduł „PCM1808 IIS” z gniazdem USB Type-C, jackiem 3,5 mm i generatorem kwarcowym |
+| ADC | DIY MORE DM-AMAD01 „PCM1808_IIS”: USB Type-C, jack 3,5 mm, generator 12,288 MHz |
 | Źródło | wyjście słuchawkowe miksera, kabel jack stereo (TRS) |
 
 Jeden moduł nagrywa oba kanały, drugi nie jest potrzebny.
 
-## Najpierw: tryb pracy modułu
-
-Moduł ma własny generator, więc najpewniej pracuje jako master i sam wytwarza
-zegary. To wariant o najlepszej jakości, bo zegar kwarcowy ma mniejszy jitter
-niż zegar z ESP32-S3. Opisu ze sklepu nie udało się odczytać, dlatego sprawdź
-tryb multimetrem:
-
-1. Zasil sam moduł przez USB Type-C, bez połączeń z ESP.
-2. Zmierz napięcie stałe między GND a pinami LRCK, BCK i MCK.
-3. Około 1,6 V na LRCK i BCK oznacza tryb master (wariant A).
-4. Około 0 V na LRCK i BCK oznacza tryb slave (wariant B).
-
-Przy okazji zmierz VDD33. Około 3,3 V potwierdza, że moduł ma własny
-stabilizator.
-
 ## Połączenia
 
-Wszystkie użyte piny są na złączu P1 płytki Waveshare i są wolne, dopóki nie
-jest podłączona kamera.
+Moduł zostaje w ustawieniu fabrycznym: jest masterem I2S i sam wytwarza zegary
+z generatora kwarcowego. ESP32-S3 pracuje jako slave i tylko odbiera dane.
 
-| PCM1808 | Wariant A: moduł master | Wariant B: moduł slave |
+| PCM1808 | ESP32-S3 (złącze P1) | Uwagi |
 | --- | --- | --- |
-| GND | GND | GND |
-| VDD33 | nie podłączać | nie podłączać |
-| LRCK | GPIO 2 (wejście) | GPIO 2 (wyjście) |
-| BCK | GPIO 4 (wejście) | GPIO 4 (wyjście) |
-| DATA | GPIO 6 (wejście) | GPIO 6 (wejście) |
-| MCK | nie podłączać | GPIO 18 (wyjście) |
+| GND | GND | masa musi być wspólna |
+| LRCK | GPIO 2 | wyjście modułu, 48 kHz |
+| BCK | GPIO 4 | wyjście modułu, 3,072 MHz |
+| DATA | GPIO 6 | wyjście modułu |
+| MCK | nie podłączać | wyjście 12,288 MHz, ESP go nie potrzebuje |
+| VDD33 | nie podłączać | wyjście stabilizatora modułu |
+| FMT, MD1, MD0 | nie podłączać | bez zworek |
 
-Zasilanie modułu: 5 V przez jego gniazdo USB Type-C. Na złączu z sygnałami nie
-ma pinu 5 V. Zasil moduł i płytkę ESP z tego samego źródła (jeden powerbank lub
-ładowarka), a masy połącz przewodem GND.
+GPIO 2, 4 i 6 są wolne, dopóki nie jest podłączona kamera. Przewody I2S powinny
+mieć najwyżej kilka centymetrów.
 
-Pin VDD33 podłącz do 3V3 płytki ESP tylko wtedy, gdy pomiar pokazał na nim 0 V.
+## Zasilanie
 
-Przewody I2S powinny mieć najwyżej kilka centymetrów.
+Moduł potrzebuje tylko 5 V; napięcie 3,3 V wytwarza własnym stabilizatorem.
+
+- Najprościej: osobny kabel do gniazda USB Type-C modułu, z tego samego
+  powerbanku lub ładowarki co płytka ESP.
+- Jeden kabel: pola „+” i „−” na spodzie modułu połączone z pinami 5V i GND
+  złącza P1. Opis sprzedawcy nie wyjaśnia tych pól, więc najpierw zasil moduł
+  przez USB i sprawdź multimetrem, czy jest na nich 5 V.
+
+## Tryb pracy i zworki
+
+| Pole | Stan fabryczny | Znaczenie |
+| --- | --- | --- |
+| FMT | niski | format I2S |
+| MD1, MD0 | wysoki (rezystory do 3,3 V na płytce) | master, 256 fs, 48 kHz |
+
+Sprzedawca zaleca dla ESP32 tryb slave (MD1 i MD0 do GND). Nie rób tego:
+przetwornik nadal pracowałby na własnym generatorze, a BCK i LRCK pochodziłyby
+z niezsynchronizowanego zegara ESP. Według noty PCM1808 kończy się to
+okresowymi przerwami w dźwięku.
+
+Z generatorem 12,288 MHz moduł nagrywa w 48 kHz. Podane w ofercie 96 kHz
+wymagałoby innego zegara.
 
 ## Konfiguracja I2S
 
-| Parametr | Wariant A | Wariant B |
-| --- | --- | --- |
-| Rola ESP | slave, odbiór | master, odbiór |
-| Format | I2S Philips, stereo | I2S Philips, stereo |
-| Dane | 24 bity w slocie 32-bitowym | 24 bity w slocie 32-bitowym |
-| Próbkowanie | ustala moduł, do zmierzenia na LRCK | 48 kHz |
-| MCLK | nieużywany | 256 × fs = 12,288 MHz |
-
-PCM1808 pracuje z ramką 64 BCK, dlatego slot 16-bitowy nie zadziała.
-
-Żadnych zworek nie trzeba dodawać.
+| Parametr | Wartość |
+| --- | --- |
+| Rola ESP | slave, odbiór (RX) |
+| Format | I2S Philips, stereo |
+| Próbkowanie | 48 kHz |
+| Dane | 24 bity w slocie 32-bitowym (ramka 64 BCK) |
+| MCLK | nieużywany |
 
 ## Piny płytki Waveshare
 
@@ -89,7 +91,7 @@ jest na nim 0 V.
 ## Filtr LC
 
 Nie jest wymagany. PCM1808 ma wbudowany filtr antyaliasingowy i górnoprzepustowy,
-a moduł ma własny stabilizator i kondensatory.
+a moduł ma własny stabilizator i kondensatory sprzęgające na wejściu.
 
 Filtr na linii 5 V ma sens dopiero wtedy, gdy w nagraniu ciszy słychać pisk lub
 terkot: koralik ferrytowy albo dławik 10–47 µH szeregowo, a za nim kondensator
@@ -109,7 +111,6 @@ miksera potrafi dać kilka razy więcej, więc:
 
 ## Do zrobienia
 
-- [ ] zmierzyć multimetrem tryb modułu (LRCK, BCK) i pin VDD33
-- [ ] odczytać napis na generatorze i opisy drugiego, 4-pinowego złącza modułu
+- [ ] sprawdzić multimetrem pola „+” i „−” modułu
 - [ ] firmware: odbiór I2S i zapis WAV na microSD
 - [ ] wskaźnik poziomu i przesterowania na LCD
