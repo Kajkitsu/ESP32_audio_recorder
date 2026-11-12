@@ -91,8 +91,9 @@ miksera potrafi dać kilka razy więcej, więc:
 
 PCM1808 nie przyjmuje ramek 32 BCK, dlatego slot 16-bitowy nie zadziała.
 
-Zworki modułu: FMT = 0 (format I2S), MD0 = MD1 = 0 (tryb slave). Poziomy muszą
-być ustawione przed włączeniem zasilania.
+Zworki modułu: żadnych nie trzeba dodawać. Piny FMT, MD0 i MD1 mają w układzie
+wewnętrzne rezystory do masy, więc niepodłączone dają format I2S i tryb slave.
+Sprawdź tylko, czy żadne z tych pól nie jest fabrycznie zlutowane do 3,3 V.
 
 ## Do zrobienia
 
