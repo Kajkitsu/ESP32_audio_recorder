@@ -23,7 +23,9 @@ z generatora kwarcowego. ESP32-S3 pracuje jako slave i tylko odbiera dane.
 
 | PCM1808 | ESP32-S3 (złącze P1) | Uwagi |
 | --- | --- | --- |
-| GND | GND | masa musi być wspólna |
+| „+” (spód modułu) | 5V | zasilanie modułu z gniazda USB płytki ESP |
+| „−” (spód modułu) | GND | masa zasilania |
+| GND | GND | masa sygnałowa, przy przewodach I2S |
 | LRCK | GPIO 2 | wyjście modułu, 48 kHz |
 | BCK | GPIO 4 | wyjście modułu, 3,072 MHz |
 | DATA | GPIO 6 | wyjście modułu |
@@ -36,13 +38,24 @@ mieć najwyżej kilka centymetrów.
 
 ## Zasilanie
 
-Moduł potrzebuje tylko 5 V; napięcie 3,3 V wytwarza własnym stabilizatorem.
+Całość zasila jedno gniazdo USB Type-C na płytce ESP. Pin 5V złącza P1 to
+bezpośrednio napięcie z USB i z niego moduł dostaje 5 V przez pola „+” i „−”.
+Napięcie 3,3 V moduł wytwarza własnym stabilizatorem.
 
-- Najprościej: osobny kabel do gniazda USB Type-C modułu, z tego samego
-  powerbanku lub ładowarki co płytka ESP.
-- Jeden kabel: pola „+” i „−” na spodzie modułu połączone z pinami 5V i GND
-  złącza P1. Opis sprzedawcy nie wyjaśnia tych pól, więc najpierw zasil moduł
-  przez USB i sprawdź multimetrem, czy jest na nich 5 V.
+Opis sprzedawcy nie wyjaśnia pól „+” i „−”, więc przed lutowaniem sprawdź je raz:
+
+1. Zasil sam moduł przez jego gniazdo USB Type-C.
+2. Zmierz napięcie między „+” a „−”. Powinno być 4,5–5 V, plus na „+”.
+3. Odłącz kabel od modułu i dopiero wtedy połącz pola z pinami 5V i GND.
+
+Zasady:
+
+- Do gniazda USB modułu nic już nie podłączaj. Dwa źródła 5 V byłyby zwarte
+  ze sobą.
+- Rejestrator wymaga zasilania z USB (ładowarka lub powerbank). Z samego
+  akumulatora płytki ESP pin 5V ma 0 V i moduł nie działa.
+- Jeśli pomiar nie pokaże 5 V, zostaje osobny kabel USB do modułu z tego samego
+  źródła co płytka ESP.
 
 ## Tryb pracy i zworki
 
@@ -85,17 +98,15 @@ Ze schematu producenta. Złącza P1 i P2 wyprowadzają 22 GPIO.
 | Złącze kamery | 2, 4, 6–17, 21 |
 | Wolny | 18 |
 
-Pin 5V złącza to bezpośrednio napięcie z USB. Przy zasilaniu z akumulatora
-jest na nim 0 V.
-
 ## Filtr LC
 
 Nie jest wymagany. PCM1808 ma wbudowany filtr antyaliasingowy i górnoprzepustowy,
 a moduł ma własny stabilizator i kondensatory sprzęgające na wejściu.
 
-Filtr na linii 5 V ma sens dopiero wtedy, gdy w nagraniu ciszy słychać pisk lub
-terkot: koralik ferrytowy albo dławik 10–47 µH szeregowo, a za nim kondensator
-100–470 µF do masy.
+Moduł dzieli linię 5 V z płytką ESP, więc zakłócenia od WiFi i przetwornicy
+mogą przechodzić do części analogowej. Jeśli w nagraniu ciszy słychać pisk lub
+terkot, wstaw filtr w przewód 5 V do modułu: koralik ferrytowy albo dławik
+10–47 µH szeregowo, a za nim kondensator 100–470 µF między „+” a „−”.
 
 Brum 50 Hz to pętla masy, nie zasilanie. Pomaga separator audio
 z transformatorami albo zasilanie rejestratora z powerbanku.
@@ -111,6 +122,7 @@ miksera potrafi dać kilka razy więcej, więc:
 
 ## Do zrobienia
 
-- [ ] sprawdzić multimetrem pola „+” i „−” modułu
+- [ ] sprawdzić multimetrem pola „+” i „−” modułu, potem połączyć z 5V i GND
+- [ ] nagrać ciszę i ocenić, czy potrzebny jest filtr na linii 5 V
 - [ ] firmware: odbiór I2S i zapis WAV na microSD
 - [ ] wskaźnik poziomu i przesterowania na LCD
