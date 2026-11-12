@@ -38,6 +38,10 @@ mieć najwyżej kilka centymetrów.
 
 ## Zasilanie
 
+> **Uwaga:** pierwsza próba zasilenia modułu przez pola „+” i „−” skończyła się
+> dymem. Przyczyna nie jest jeszcze ustalona. Do wyjaśnienia nie podłączaj
+> zasilania w ten sposób.
+
 Całość zasila jedno gniazdo USB Type-C na płytce ESP. Pin 5V złącza P1 to
 bezpośrednio napięcie z USB i z niego moduł dostaje 5 V przez pola „+” i „−”.
 Napięcie 3,3 V moduł wytwarza własnym stabilizatorem.
@@ -122,7 +126,7 @@ miksera potrafi dać kilka razy więcej, więc:
 
 ## Do zrobienia
 
-- [ ] sprawdzić multimetrem pola „+” i „−” modułu, potem połączyć z 5V i GND
+- [ ] ustalić przyczynę dymu przy zasilaniu przez pola „+” i „−”, ocenić uszkodzenia
 - [ ] nagrać ciszę i ocenić, czy potrzebny jest filtr na linii 5 V
 - [ ] firmware: odbiór I2S i zapis WAV na microSD
 - [ ] wskaźnik poziomu i przesterowania na LCD
