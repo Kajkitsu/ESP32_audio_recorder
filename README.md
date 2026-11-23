@@ -5,7 +5,7 @@ przetwornika ADC PCM1808, a ESP32-S3 odbiera go po I2S i zapisuje jako WAV na
 karcie microSD.
 
 Stan: sprzęt jest zmontowany. Firmware (katalog `firmware/`) pokazuje poziomy
-i wykresy obu kanałów i nagrywa na kartę. Przeglądarka plików, formatowanie
+i kształt sygnału obu kanałów i nagrywa na kartę. Przeglądarka plików, formatowanie
 karty i tryb pendrive są w przygotowaniu.
 
 ## Obsługa

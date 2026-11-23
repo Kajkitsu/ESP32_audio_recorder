@@ -32,7 +32,7 @@ static const char *TAG = "recorder";
 // The header is padded to one sector and every write is a whole number of
 // sectors and of frames, so FatFs never has to patch partial sectors.
 #define HEADER_BYTES     512
-#define CHUNK_BYTES      32256
+#define CHUNK_BYTES      16128
 // A new file is started after an hour, well below the 4 GB FAT32 limit.
 #ifndef SPLIT_CHUNKS
 #define SPLIT_CHUNKS     (3600u * BYTES_PER_SEC / CHUNK_BYTES)

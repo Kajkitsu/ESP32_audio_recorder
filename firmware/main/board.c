@@ -37,7 +37,7 @@ esp_err_t board_bus_init(void)
         .cs_gpio_num = BOARD_PIN_LCD_CS,
         .dc_gpio_num = BOARD_PIN_LCD_DC,
         .spi_mode = 0,
-        .pclk_hz = 40 * 1000 * 1000,
+        .pclk_hz = 80 * 1000 * 1000,
         .trans_queue_depth = 10,
         .lcd_cmd_bits = 8,
         .lcd_param_bits = 8,

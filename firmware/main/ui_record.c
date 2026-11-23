@@ -21,6 +21,8 @@
 #define HOT_DB         (-3.0f)
 #define PEAK_HOLD_US   1500000
 #define REFRESH_MS     50
+#define SCOPE_PERIOD_TICKS   2
+#define SCOPE_FRAMES_PER_PX  2
 #define UNLOCK_HOLD_US 2000000
 #define DIM_AFTER_MS   30000
 #define BACKLIGHT_ON   80
@@ -61,6 +63,7 @@ static float s_hold_db[AUDIO_CHANNELS] = {-120.0f, -120.0f};
 static int64_t s_hold_us[AUDIO_CHANNELS];
 static int s_bar_level[AUDIO_CHANNELS] = {-1, -1};
 static int s_hold_x[AUDIO_CHANNELS] = {-1, -1};
+static int s_scope_tick;
 static bool s_locked;
 static int64_t s_unlock_press_us;
 static int s_backlight = BACKLIGHT_ON;
@@ -104,48 +107,56 @@ static void set_text(lv_obj_t *label, const char *text)
     }
 }
 
-static level_t col_level(const audio_col_t *col, int ch)
-{
-    int lo = -col->min[ch];
-    int hi = col->max[ch];
-    int mag = lo > hi ? lo : hi;
-    if (col->clipped[ch]) {
-        return LEVEL_CLIP;
-    }
-    // -3 dB and -12 dB on the 16-bit scale.
-    if (mag >= 23198) {
-        return LEVEL_HOT;
-    }
-    if (mag >= 8231) {
-        return LEVEL_WARN;
-    }
-    return LEVEL_OK;
-}
-
-// Scrolls one channel's waveform left by a pixel and draws the new column.
-static void wave_push(int ch, const audio_col_t *col)
+// Draws 10 ms of one channel as an oscilloscope trace. The whole canvas is
+// redrawn, so nothing has to move smoothly and a late frame goes unnoticed.
+static void scope_draw(int ch, const int16_t *frames, level_t level)
 {
     lv_color_t *px = s_canvas_buf[ch];
-    memmove(px, px + 1, (WAVE_W * WAVE_H - 1) * sizeof(lv_color_t));
-
     const int mid = WAVE_H / 2;
-    int y_top = mid - (col->max[ch] * mid) / 32768;
-    int y_bot = mid - (col->min[ch] * mid) / 32768;
-    if (y_top < 0) {
-        y_top = 0;
+    for (int i = 0; i < WAVE_W * WAVE_H; i++) {
+        px[i] = (i / WAVE_W == mid) ? COLOR_GRID : COLOR_PANEL;
     }
-    if (y_bot > WAVE_H - 1) {
-        y_bot = WAVE_H - 1;
+    if (!frames) {
+        return;
     }
-    lv_color_t wave = level_color(col_level(col, ch));
-    for (int y = 0; y < WAVE_H; y++) {
-        lv_color_t c = COLOR_PANEL;
-        if (y >= y_top && y <= y_bot) {
-            c = wave;
-        } else if (y == mid) {
-            c = COLOR_GRID;
+
+    // Start at a rising zero crossing so a steady tone stands still.
+    int start = 0;
+    const int search = AUDIO_SCOPE_FRAMES - WAVE_W * SCOPE_FRAMES_PER_PX;
+    for (int i = 1; i < search; i++) {
+        if (frames[(i - 1) * AUDIO_CHANNELS + ch] < 0 && frames[i * AUDIO_CHANNELS + ch] >= 0) {
+            start = i;
+            break;
         }
-        px[y * WAVE_W + WAVE_W - 1] = c;
+    }
+
+    lv_color_t color = level_color(level);
+    int prev = frames[start * AUDIO_CHANNELS + ch];
+    for (int x = 0; x < WAVE_W; x++) {
+        // Include the previous sample so neighbouring columns join up.
+        int lo = prev, hi = prev;
+        for (int k = 0; k < SCOPE_FRAMES_PER_PX; k++) {
+            int s = frames[(start + x * SCOPE_FRAMES_PER_PX + k) * AUDIO_CHANNELS + ch];
+            if (s < lo) {
+                lo = s;
+            }
+            if (s > hi) {
+                hi = s;
+            }
+            prev = s;
+        }
+        // One pixel more than the sample range, so the trace is 2 px thick.
+        int y_top = mid - (hi * mid) / 32768 - 1;
+        int y_bot = mid - (lo * mid) / 32768;
+        if (y_top < 0) {
+            y_top = 0;
+        }
+        if (y_bot > WAVE_H - 1) {
+            y_bot = WAVE_H - 1;
+        }
+        for (int y = y_top; y <= y_bot; y++) {
+            px[y * WAVE_W + x] = color;
+        }
     }
 }
 
@@ -316,22 +327,25 @@ static void refresh_cb(lv_timer_t *timer)
     recorder_get_status(&rec);
     int64_t now = esp_timer_get_time();
 
-    audio_col_t cols[8];
-    int n = audio_in_read_cols(cols, 8);
-    for (int i = 0; i < n; i++) {
-        for (int ch = 0; ch < AUDIO_CHANNELS; ch++) {
-            wave_push(ch, &cols[i]);
-        }
-    }
-    if (n > 0) {
-        for (int ch = 0; ch < AUDIO_CHANNELS; ch++) {
-            lv_obj_invalidate(s_canvas[ch]);
-        }
-    }
-
     update_meters(&lv, now);
     update_clip_banner(&lv);
     update_status(&lv, &rec);
+
+    // The traces are the most expensive thing on screen; 10 per second is
+    // plenty for a shape display.
+    static int16_t frames[AUDIO_SCOPE_FRAMES * AUDIO_CHANNELS];
+    static bool had_signal = true;
+    if (++s_scope_tick >= SCOPE_PERIOD_TICKS) {
+        s_scope_tick = 0;
+        bool have = audio_in_get_scope(frames);
+        if (have || had_signal) {
+            for (int ch = 0; ch < AUDIO_CHANNELS; ch++) {
+                scope_draw(ch, have ? frames : NULL, (level_t)s_bar_level[ch]);
+                lv_obj_invalidate(s_canvas[ch]);
+            }
+        }
+        had_signal = have;
+    }
 
     // A locked recorder is usually left alone, so stop lighting the room.
     int backlight = s_locked && lv_disp_get_inactive_time(NULL) > DIM_AFTER_MS ? BACKLIGHT_DIM

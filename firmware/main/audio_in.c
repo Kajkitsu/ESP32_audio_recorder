@@ -19,7 +19,6 @@ static const char *TAG = "audio_in";
 // A 24-bit sample at or beyond this magnitude counts as clipped.
 #define CLIP_THRESHOLD 0x7FFF00
 #define FULL_SCALE     8388608.0f
-#define COL_FIFO_LEN   32
 #define SILENCE_DB     (-120.0f)
 
 static i2s_chan_handle_t s_rx;
@@ -33,27 +32,14 @@ static uint32_t s_clip_blocks[AUDIO_CHANNELS];
 static int64_t s_last_clip_us[AUDIO_CHANNELS];
 static bool s_signal_ok;
 static uint32_t s_measured_rate;
-static audio_col_t s_cols[COL_FIFO_LEN];
-static int s_col_head;
-static int s_col_count;
-
-static void push_col(const audio_col_t *col)
-{
-    portENTER_CRITICAL(&s_lock);
-    s_cols[s_col_head] = *col;
-    s_col_head = (s_col_head + 1) % COL_FIFO_LEN;
-    if (s_col_count < COL_FIFO_LEN) {
-        s_col_count++;
-    }
-    portEXIT_CRITICAL(&s_lock);
-}
+// Last 20 ms of input for the oscilloscope view, oldest frame first.
+static int16_t s_scope[AUDIO_SCOPE_FRAMES * AUDIO_CHANNELS];
 
 static void audio_task(void *arg)
 {
     static int32_t buf[BLOCK_FRAMES * AUDIO_CHANNELS];
 
-    audio_col_t col = {0};
-    int col_frames = 0;
+    static int16_t block16[BLOCK_FRAMES * AUDIO_CHANNELS];
     int64_t rate_t0 = esp_timer_get_time();
     uint32_t rate_frames = 0;
 
@@ -91,24 +77,7 @@ static void audio_task(void *arg)
                 int32_t s16 = s >> 8;
                 sum_sq[ch] += (uint64_t)((int64_t)s16 * s16);
 
-                if (col_frames == 0) {
-                    col.min[ch] = col.max[ch] = (int16_t)s16;
-                    col.clipped[ch] = false;
-                } else {
-                    if (s16 < col.min[ch]) {
-                        col.min[ch] = (int16_t)s16;
-                    }
-                    if (s16 > col.max[ch]) {
-                        col.max[ch] = (int16_t)s16;
-                    }
-                }
-                if (mag >= CLIP_THRESHOLD) {
-                    col.clipped[ch] = true;
-                }
-            }
-            if (++col_frames >= AUDIO_FRAMES_PER_COL) {
-                push_col(&col);
-                col_frames = 0;
+                block16[i * AUDIO_CHANNELS + ch] = (int16_t)s16;
             }
         }
 
@@ -137,6 +106,11 @@ static void audio_task(void *arg)
             }
         }
         s_sum_count += frames;
+        // Slide the scope window along by this block.
+        size_t fresh = (size_t)frames * AUDIO_CHANNELS;
+        size_t keep = AUDIO_SCOPE_FRAMES * AUDIO_CHANNELS - fresh;
+        memmove(s_scope, s_scope + fresh, keep * sizeof(int16_t));
+        memcpy(s_scope + keep, block16, fresh * sizeof(int16_t));
         portEXIT_CRITICAL(&s_lock);
 
         if (rate) {
@@ -209,17 +183,15 @@ void audio_in_get_levels(audio_levels_t *out)
     }
 }
 
-int audio_in_read_cols(audio_col_t *cols, int max)
+bool audio_in_get_scope(int16_t *out)
 {
-    int n = 0;
     portENTER_CRITICAL(&s_lock);
-    while (s_col_count > 0 && n < max) {
-        int tail = (s_col_head - s_col_count + COL_FIFO_LEN) % COL_FIFO_LEN;
-        cols[n++] = s_cols[tail];
-        s_col_count--;
+    bool ok = s_signal_ok;
+    if (ok) {
+        memcpy(out, s_scope, sizeof(s_scope));
     }
     portEXIT_CRITICAL(&s_lock);
-    return n;
+    return ok;
 }
 
 void audio_in_clear_clip(void)

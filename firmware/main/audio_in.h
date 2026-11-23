@@ -8,15 +8,8 @@
 
 #define AUDIO_SAMPLE_RATE    48000
 #define AUDIO_CHANNELS       2
-// One waveform column covers this many frames (100 ms).
-#define AUDIO_FRAMES_PER_COL 4800
-
-// One column of the scrolling waveform: sample range per channel, 16-bit scale.
-typedef struct {
-    int16_t min[AUDIO_CHANNELS];
-    int16_t max[AUDIO_CHANNELS];
-    bool clipped[AUDIO_CHANNELS];
-} audio_col_t;
+// Length of the snapshot handed to the oscilloscope view (20 ms).
+#define AUDIO_SCOPE_FRAMES   960
 
 typedef struct {
     // Since the previous call. -120 means digital silence or no data.
@@ -38,7 +31,8 @@ esp_err_t audio_in_start(void);
 // Levels accumulated since the previous call; the call starts a new interval.
 void audio_in_get_levels(audio_levels_t *out);
 
-// Moves pending waveform columns into cols and returns how many were copied.
-int audio_in_read_cols(audio_col_t *cols, int max);
+// Copies the most recent AUDIO_SCOPE_FRAMES frames into out, interleaved
+// L, R on the 16-bit scale. Returns false while there is no input.
+bool audio_in_get_scope(int16_t *out);
 
 void audio_in_clear_clip(void);
