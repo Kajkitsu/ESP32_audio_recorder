@@ -1,5 +1,6 @@
 #include "ui_record.h"
 
+#include <assert.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -40,6 +41,8 @@ static lv_obj_t *s_db_label[AUDIO_CHANNELS];
 static lv_obj_t *s_clip_banner;
 static lv_obj_t *s_clip_label;
 static lv_obj_t *s_card_label;
+static lv_obj_t *s_touch_label;
+static lv_obj_t *s_touch_dot;
 
 static float s_hold_db[AUDIO_CHANNELS] = {-120.0f, -120.0f};
 static int64_t s_hold_us[AUDIO_CHANNELS];
@@ -175,7 +178,7 @@ static void refresh_cb(lv_timer_t *timer)
     }
 
     if (!lv.signal_ok) {
-        lv_label_set_text(s_status, "NO SIGNAL FROM ADC");
+        lv_label_set_text(s_status, "NO ADC SIGNAL");
         lv_obj_set_style_text_color(s_status, COLOR_CLIP, 0);
         lv_label_set_text(s_info, "check LRCK / BCK / DATA wires");
     } else {
@@ -208,6 +211,20 @@ static void refresh_cb(lv_timer_t *timer)
 static void clip_clicked_cb(lv_event_t *e)
 {
     audio_in_clear_clip();
+}
+
+// Bring-up aid: shows where the panel reports a touch.
+static void touch_probe_cb(lv_event_t *e)
+{
+    lv_indev_t *indev = lv_indev_get_act();
+    if (!indev) {
+        return;
+    }
+    lv_point_t p;
+    lv_indev_get_point(indev, &p);
+    lv_label_set_text_fmt(s_touch_label, "touch %d, %d", (int)p.x, (int)p.y);
+    lv_obj_set_pos(s_touch_dot, p.x - 4, p.y - 4);
+    lv_obj_clear_flag(s_touch_dot, LV_OBJ_FLAG_HIDDEN);
 }
 
 static lv_obj_t *make_label(lv_obj_t *parent, const lv_font_t *font, lv_color_t color,
@@ -249,6 +266,7 @@ static void make_channel(lv_obj_t *scr, int ch, const char *name, int wave_y, in
     s_hold_mark[ch] = lv_obj_create(s_bar[ch]);
     lv_obj_remove_style_all(s_hold_mark[ch]);
     lv_obj_set_size(s_hold_mark[ch], 2, METER_H);
+    lv_obj_clear_flag(s_hold_mark[ch], LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_style_bg_color(s_hold_mark[ch], COLOR_TEXT, 0);
     lv_obj_set_style_bg_opa(s_hold_mark[ch], LV_OPA_COVER, 0);
 
@@ -275,6 +293,10 @@ void ui_record_create(void)
     make_label(scr, &lv_font_montserrat_14, COLOR_WARN, 128, 230, "-12");
     make_label(scr, &lv_font_montserrat_14, COLOR_HOT, 158, 230, "0 dB");
 
+    s_touch_label = make_label(scr, &lv_font_montserrat_14, COLOR_DIM, 4, 260, "touch the screen");
+    lv_obj_add_flag(scr, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(scr, touch_probe_cb, LV_EVENT_PRESSING, NULL);
+
     s_clip_banner = lv_obj_create(scr);
     lv_obj_remove_style_all(s_clip_banner);
     lv_obj_set_size(s_clip_banner, BOARD_LCD_H_RES, 34);
@@ -291,6 +313,14 @@ void ui_record_create(void)
 
     s_card_label = make_label(scr, &lv_font_montserrat_14, COLOR_DIM, 4, 298, "");
     update_card_label();
+
+    s_touch_dot = lv_obj_create(scr);
+    lv_obj_remove_style_all(s_touch_dot);
+    lv_obj_set_size(s_touch_dot, 8, 8);
+    lv_obj_set_style_bg_color(s_touch_dot, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_bg_opa(s_touch_dot, LV_OPA_COVER, 0);
+    lv_obj_clear_flag(s_touch_dot, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_flag(s_touch_dot, LV_OBJ_FLAG_HIDDEN);
 
     lv_timer_create(refresh_cb, REFRESH_MS, NULL);
 

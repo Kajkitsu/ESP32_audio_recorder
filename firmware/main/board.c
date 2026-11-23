@@ -93,8 +93,7 @@ static esp_err_t touch_init(lv_disp_t *disp)
     i2c_master_bus_handle_t i2c_bus;
     ESP_RETURN_ON_ERROR(i2c_new_master_bus(&bus_cfg, &i2c_bus), TAG, "i2c bus");
 
-    esp_lcd_panel_io_i2c_config_t tp_io_cfg = ESP_LCD_TOUCH_IO_I2C_CST816S_CONFIG();
-    tp_io_cfg.scl_speed_hz = 400000;
+    const esp_lcd_panel_io_i2c_config_t tp_io_cfg = ESP_LCD_TOUCH_IO_I2C_CST816S_CONFIG();
     esp_lcd_panel_io_handle_t tp_io;
     ESP_RETURN_ON_ERROR(esp_lcd_new_panel_io_i2c(i2c_bus, &tp_io_cfg, &tp_io), TAG, "touch io");
 
