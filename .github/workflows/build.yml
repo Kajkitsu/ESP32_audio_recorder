@@ -1,0 +1,47 @@
+name: Build firmware
+
+on:
+  push:
+    paths:
+      - "firmware/**"
+      - ".github/workflows/build.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Builds the project and merges bootloader, partition table and app
+      # into one image that is flashed at offset 0x0.
+      - name: Build
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.5.6
+          target: esp32s3
+          path: firmware
+          command: idf.py merge-bin
+
+      - name: Collect image
+        run: cp firmware/build/merged-binary.bin recorder.bin
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: recorder-firmware
+          path: recorder.bin
+
+      # The newest build of master is always available as release "latest".
+      - name: Publish latest release
+        if: github.ref == 'refs/heads/master'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete latest --yes --cleanup-tag || true
+          gh release create latest recorder.bin \
+            --target "$GITHUB_SHA" \
+            --title "Latest firmware" \
+            --notes "Built from $GITHUB_SHA. Flash recorder.bin at offset 0x0."

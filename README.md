@@ -4,7 +4,24 @@ Rejestrator stereo do miksera: sygnał z wyjścia słuchawkowego miksera trafia 
 przetwornika ADC PCM1808, a ESP32-S3 odbiera go po I2S i zapisuje jako WAV na
 karcie microSD.
 
-Stan: jest tylko dokumentacja sprzętu, firmware jeszcze nie powstał.
+Stan: sprzęt jest zmontowany. Firmware (katalog `firmware/`) pokazuje na razie
+poziomy i wykresy obu kanałów; nagrywanie na kartę jest w przygotowaniu.
+
+## Wgrywanie firmware
+
+Firmware buduje się samo na GitHubie po każdej zmianie w `firmware/`. Niczego
+nie trzeba instalować, wystarczy przeglądarka Chrome albo Edge.
+
+1. Pobierz plik: zakładka **Actions** w repozytorium → najnowszy zielony
+   przebieg „Build firmware” → na dole **Artifacts** → `recorder-firmware`.
+   Rozpakuj archiwum, w środku jest `recorder.bin`.
+2. Podłącz płytkę kablem USB-C do komputera. Przy pierwszym wgrywaniu
+   przytrzymaj przycisk BOOT w chwili podłączania kabla.
+3. Otwórz <https://espressif.github.io/esptool-js/>, kliknij **Connect**
+   i wybierz port „USB JTAG/serial debug unit”.
+4. W polu **Flash Address** wpisz `0x0`, wybierz plik `recorder.bin` i kliknij
+   **Program**.
+5. Po zakończeniu odłącz i podłącz kabel USB.
 
 ## Sprzęt
 
