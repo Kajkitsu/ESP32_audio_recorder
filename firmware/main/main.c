@@ -2,6 +2,7 @@
 #include "board.h"
 #include "esp_log.h"
 #include "nvs_flash.h"
+#include "recorder.h"
 #include "storage.h"
 #include "ui_record.h"
 
@@ -21,6 +22,11 @@ void app_main(void)
     ESP_ERROR_CHECK(board_bus_init());
     storage_mount();
     ESP_ERROR_CHECK(board_display_init());
+
+    err = recorder_init();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "recorder failed to start: %s", esp_err_to_name(err));
+    }
 
     err = audio_in_start();
     if (err != ESP_OK) {

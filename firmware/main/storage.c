@@ -4,12 +4,18 @@
 #include "driver/sdspi_host.h"
 #include "esp_log.h"
 #include "esp_vfs_fat.h"
+#include "freertos/FreeRTOS.h"
 #include "sdmmc_cmd.h"
 
 static const char *TAG = "storage";
 
 static storage_state_t s_state = STORAGE_NO_CARD;
 static sdmmc_card_t *s_card;
+
+static portMUX_TYPE s_space_lock = portMUX_INITIALIZER_UNLOCKED;
+static uint64_t s_total_bytes;
+static uint64_t s_free_bytes;
+static bool s_space_known;
 
 storage_state_t storage_mount(void)
 {
@@ -50,10 +56,24 @@ storage_state_t storage_state(void)
     return s_state;
 }
 
+void storage_update_space(void)
+{
+    uint64_t total = 0, free_bytes = 0;
+    bool ok = s_state == STORAGE_READY &&
+              esp_vfs_fat_info(STORAGE_MOUNT_POINT, &total, &free_bytes) == ESP_OK;
+    portENTER_CRITICAL(&s_space_lock);
+    s_total_bytes = total;
+    s_free_bytes = free_bytes;
+    s_space_known = ok;
+    portEXIT_CRITICAL(&s_space_lock);
+}
+
 bool storage_get_space(uint64_t *total_bytes, uint64_t *free_bytes)
 {
-    if (s_state != STORAGE_READY) {
-        return false;
-    }
-    return esp_vfs_fat_info(STORAGE_MOUNT_POINT, total_bytes, free_bytes) == ESP_OK;
+    portENTER_CRITICAL(&s_space_lock);
+    *total_bytes = s_total_bytes;
+    *free_bytes = s_free_bytes;
+    bool known = s_space_known;
+    portEXIT_CRITICAL(&s_space_lock);
+    return known && s_state == STORAGE_READY;
 }

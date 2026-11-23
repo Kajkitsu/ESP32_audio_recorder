@@ -4,8 +4,27 @@ Rejestrator stereo do miksera: sygnał z wyjścia słuchawkowego miksera trafia 
 przetwornika ADC PCM1808, a ESP32-S3 odbiera go po I2S i zapisuje jako WAV na
 karcie microSD.
 
-Stan: sprzęt jest zmontowany. Firmware (katalog `firmware/`) pokazuje na razie
-poziomy i wykresy obu kanałów; nagrywanie na kartę jest w przygotowaniu.
+Stan: sprzęt jest zmontowany. Firmware (katalog `firmware/`) pokazuje poziomy
+i wykresy obu kanałów i nagrywa na kartę. Przeglądarka plików, formatowanie
+karty i tryb pendrive są w przygotowaniu.
+
+## Obsługa
+
+| Przycisk | Działanie |
+| --- | --- |
+| REC / STOP | start i koniec nagrania |
+| MARK | znacznik w bieżącym miejscu nagrania |
+| LOCK | blokada dotyku; odblokowanie przytrzymaniem ekranu przez 2 s |
+
+- Nagrania trafiają do katalogu `REC` na karcie jako `REC_0001.wav`
+  (48 kHz, 24 bity, stereo, około 1 GB na godzinę).
+- Co godzinę zaczyna się nowy plik (`REC_0001_2.wav`), bez przerwy w dźwięku.
+- Znaczniki zapisują się obok jako `REC_0001.txt`. W Audacity wczytasz je
+  przez File → Import → Labels.
+- Czerwony pasek „INPUT TOO LOUD” oznacza przesterowanie wejścia: ścisz
+  wyjście słuchawkowe miksera. Dotknięcie paska go chowa.
+- Po zaniku zasilania w trakcie nagrywania plik zostaje, a jego nagłówek jest
+  naprawiany przy następnym włączeniu.
 
 ## Wgrywanie firmware
 

@@ -18,5 +18,10 @@ storage_state_t storage_mount(void);
 
 storage_state_t storage_state(void);
 
-// Capacity and free space in bytes. Returns false when no card is mounted.
+// Reads capacity and free space from the card. Can take seconds on a large
+// card, so it must not run in the UI task.
+void storage_update_space(void);
+
+// Capacity and free space in bytes as of the last storage_update_space().
+// Returns false when no card is mounted or nothing has been read yet.
 bool storage_get_space(uint64_t *total_bytes, uint64_t *free_bytes);

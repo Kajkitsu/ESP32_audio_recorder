@@ -10,6 +10,7 @@
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "recorder.h"
 
 static const char *TAG = "audio_in";
 
@@ -71,6 +72,7 @@ static void audio_task(void *arg)
         }
 
         int frames = got / (sizeof(int32_t) * AUDIO_CHANNELS);
+        recorder_feed(buf, frames);
         int32_t peak[AUDIO_CHANNELS] = {0};
         uint64_t sum_sq[AUDIO_CHANNELS] = {0};
         bool clipped[AUDIO_CHANNELS] = {false};
