@@ -9,14 +9,27 @@
 #include "esp_lcd_touch_cst816s.h"
 #include "esp_log.h"
 #include "esp_lvgl_port.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 static const char *TAG = "board";
 
-// Height of the LVGL draw buffer in lines. One buffer is one SPI transfer.
-#define DRAW_BUF_LINES 40
+// Height of the LVGL draw buffer in lines. One buffer is one SPI transfer, so
+// anything up to this height reaches the panel in one piece: an SD card write
+// on the shared bus cannot land in the middle of it. Tall enough for one
+// oscilloscope trace.
+#define DRAW_BUF_LINES 66
+
+#define TOUCH_POLL_MS  10
 
 static esp_lcd_panel_io_handle_t s_lcd_io;
 static esp_lcd_panel_handle_t s_panel;
+
+// Touch state, written by touch_task and read by LVGL, guarded by s_touch_lock.
+static portMUX_TYPE s_touch_lock = portMUX_INITIALIZER_UNLOCKED;
+static bool s_touch_down;
+static bool s_touch_press_pending; // a press began since LVGL last looked
+static lv_point_t s_touch_point;
 
 esp_err_t board_bus_init(void)
 {
@@ -80,6 +93,56 @@ void board_set_backlight(int percent)
     ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
 }
 
+// Polls the touch controller from its own task. The LVGL task can spend a
+// long time waiting for the SD card to release the shared SPI bus, and a short
+// tap would be over before it read the controller.
+static void touch_task(void *arg)
+{
+    esp_lcd_touch_handle_t tp = arg;
+    bool was_down = false;
+    int misses = 0;
+
+    for (;;) {
+        vTaskDelay(pdMS_TO_TICKS(TOUCH_POLL_MS));
+
+        esp_lcd_touch_point_data_t point;
+        uint8_t count = 0;
+        bool touched = esp_lcd_touch_read_data(tp) == ESP_OK &&
+                       esp_lcd_touch_get_data(tp, &point, &count, 1) == ESP_OK && count > 0;
+        // One empty or failed read does not end a press: that would turn a
+        // single tap into two, and the second one could stop a recording.
+        misses = touched ? 0 : misses + 1;
+        bool down = touched || (was_down && misses < 2);
+
+        portENTER_CRITICAL(&s_touch_lock);
+        s_touch_down = down;
+        if (touched) {
+            s_touch_point.x = point.x;
+            s_touch_point.y = point.y;
+        }
+        if (down && !was_down) {
+            s_touch_press_pending = true;
+        }
+        portEXIT_CRITICAL(&s_touch_lock);
+        was_down = down;
+    }
+}
+
+static void touch_read_cb(lv_indev_drv_t *drv, lv_indev_data_t *data)
+{
+    portENTER_CRITICAL(&s_touch_lock);
+    bool pending = s_touch_press_pending;
+    s_touch_press_pending = false;
+    bool down = s_touch_down;
+    data->point = s_touch_point;
+    portEXIT_CRITICAL(&s_touch_lock);
+
+    // A tap that began and ended between two reads is still reported: the
+    // press now, the release in a second read straight after.
+    data->state = pending || down ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
+    data->continue_reading = pending && !down;
+}
+
 static esp_err_t touch_init(lv_disp_t *disp)
 {
     const i2c_master_bus_config_t bus_cfg = {
@@ -108,12 +171,19 @@ static esp_err_t touch_init(lv_disp_t *disp)
     esp_lcd_touch_handle_t tp;
     ESP_RETURN_ON_ERROR(esp_lcd_touch_new_i2c_cst816s(tp_io, &tp_cfg, &tp), TAG, "touch");
 
-    const lvgl_port_touch_cfg_t touch_cfg = {
-        .disp = disp,
-        .handle = tp,
-    };
-    ESP_RETURN_ON_FALSE(lvgl_port_add_touch(&touch_cfg) != NULL, ESP_FAIL, TAG, "lvgl touch");
-    return ESP_OK;
+    static lv_indev_drv_t indev_drv;
+    lvgl_port_lock(0);
+    lv_indev_drv_init(&indev_drv);
+    indev_drv.type = LV_INDEV_TYPE_POINTER;
+    indev_drv.disp = disp;
+    indev_drv.read_cb = touch_read_cb;
+    lv_indev_t *indev = lv_indev_drv_register(&indev_drv);
+    lvgl_port_unlock();
+    ESP_RETURN_ON_FALSE(indev != NULL, ESP_FAIL, TAG, "lvgl touch");
+
+    // Above the LVGL task, which busy-waits while a flush is pending.
+    BaseType_t ok = xTaskCreate(touch_task, "touch", 3072, tp, 5, NULL);
+    return ok == pdPASS ? ESP_OK : ESP_ERR_NO_MEM;
 }
 
 esp_err_t board_display_init(void)

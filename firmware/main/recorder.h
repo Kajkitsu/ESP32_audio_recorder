@@ -35,5 +35,9 @@ void recorder_add_marker(void);
 
 void recorder_get_status(rec_status_t *out);
 
+// Card operations since the previous call and the longest of them, for the
+// diagnostic log.
+void recorder_take_stats(uint32_t *writes, uint32_t *max_write_ms);
+
 // Called by the audio task with raw I2S frames (two 32-bit slots per frame).
 void recorder_feed(const int32_t *frames, int n_frames);

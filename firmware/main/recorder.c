@@ -30,9 +30,12 @@ static const char *TAG = "recorder";
 #define RING_MASK        (RING_BYTES - 1)
 
 // The header is padded to one sector and every write is a whole number of
-// sectors and of frames, so FatFs never has to patch partial sectors.
+// sectors and of frames, so FatFs never has to patch partial sectors. That
+// needs a multiple of 1536 bytes (512-byte sector, 6-byte frame); this is 20
+// of them, about 107 ms of audio. Bigger chunks mean fewer card operations,
+// each of which keeps the LCD off the shared SPI bus.
 #define HEADER_BYTES     512
-#define CHUNK_BYTES      16128
+#define CHUNK_BYTES      30720
 // A new file is started after an hour, well below the 4 GB FAT32 limit.
 #ifndef SPLIT_CHUNKS
 #define SPLIT_CHUNKS     (3600u * BYTES_PER_SEC / CHUNK_BYTES)
@@ -74,6 +77,21 @@ static int64_t s_last_sync_us;
 
 static portMUX_TYPE s_status_lock = portMUX_INITIALIZER_UNLOCKED;
 static rec_status_t s_status;
+// Card activity since the last recorder_take_stats(), guarded by s_status_lock.
+static uint32_t s_stat_writes;
+static uint32_t s_stat_max_write_ms;
+
+// Counts one card operation that started at t0.
+static void note_card_op(int64_t t0)
+{
+    uint32_t ms = (uint32_t)((esp_timer_get_time() - t0) / 1000);
+    portENTER_CRITICAL(&s_status_lock);
+    s_stat_writes++;
+    if (ms > s_stat_max_write_ms) {
+        s_stat_max_write_ms = ms;
+    }
+    portEXIT_CRITICAL(&s_status_lock);
+}
 
 static void put16(uint8_t *p, uint16_t v)
 {
@@ -354,10 +372,12 @@ static bool write_from_ring(uint32_t n)
     memcpy(s_chunk, s_ring + off, first);
     memcpy(s_chunk + first, s_ring, n - first);
 
+    int64_t t0 = esp_timer_get_time();
     if (write(s_fd, s_chunk, n) != (ssize_t)n) {
         ESP_LOGE(TAG, "write failed: errno %d", errno);
         return false;
     }
+    note_card_op(t0);
     s_tail = tail + n;
     s_part_bytes += n;
     s_total_bytes += n;
@@ -393,7 +413,9 @@ static void pump(void)
         s_last_sync_us = now;
         if (fsync(s_fd) != 0) {
             finish("WRITE ERROR");
+            return;
         }
+        note_card_op(now);
     }
 }
 
@@ -498,6 +520,16 @@ void recorder_get_status(rec_status_t *out)
     out->remaining_s = have_space && free_bytes > MIN_FREE_BYTES
                            ? (uint32_t)((free_bytes - MIN_FREE_BYTES) / BYTES_PER_SEC)
                            : 0;
+}
+
+void recorder_take_stats(uint32_t *writes, uint32_t *max_write_ms)
+{
+    portENTER_CRITICAL(&s_status_lock);
+    *writes = s_stat_writes;
+    *max_write_ms = s_stat_max_write_ms;
+    s_stat_writes = 0;
+    s_stat_max_write_ms = 0;
+    portEXIT_CRITICAL(&s_status_lock);
 }
 
 void recorder_feed(const int32_t *frames, int n_frames)
